@@ -315,3 +315,84 @@ instance_pretty() {
     data=$(echo "$data" | jq -r "$fields")
     (echo "$header" && echo "$data") | sed 's/"//g' | column -t -s,
 }
+
+generate_sshconfig() {
+    sshnew="$AXIOM_PATH/.sshconfig.new$RANDOM"
+    sshkey=$(jq -r '.sshkey' < "$AXIOM_PATH/axiom.json")
+    generate_sshconfig_setting=$(jq -r '.generate_sshconfig' < "$AXIOM_PATH/axiom.json")
+
+    if [[ "$generate_sshconfig_setting" == "lock" ]] || [[ "$generate_sshconfig_setting" == "cache" ]] ; then
+        echo -e "${BYellow}Using cached SSH config. No regeneration performed. To revert run:${Color_Off} ax ssh --just-generate"
+        if [ -f "$AXIOM_PATH/.sshconfig" ]; then
+            return 0
+        else
+            echo -e "${BRed}Error: No cached SSH config found at $AXIOM_PATH/.sshconfig. Generating a new one.${Color_Off}"
+        fi
+    fi
+
+    instances_json="$(bitlaunch_list_instances)"
+    if [ $? -ne 0 ]; then
+        echo -e "${BRed}Failed to list bitlaunch instances to generate ssh config.${Color_Off}"
+        return 1
+    fi
+    if ! echo "$instances_json" | jq -e . > /dev/null 2>&1; then
+        echo "Got invalid JSON from bitlaunch_list_instances"
+        echo "$instances_json"
+        return 1
+    fi
+
+    echo -n "" > "$sshnew"
+    {
+        echo -e "ServerAliveInterval 60"
+        echo -e "IdentityFile $HOME/.ssh/$sshkey"
+    } >> "$sshnew"
+
+    name_count_str=""
+
+    get_count() {
+        local key="$1"
+        echo "$name_count_str" | grep -oE "$key:[0-9]+" | cut -d: -f2 | tail -n1
+    }
+
+    set_count() {
+        local key="$1"
+        local new_count="$2"
+        name_count_str="$(echo "$name_count_str" | sed "s/$key:[0-9]*//g")"
+        name_count_str="$name_count_str $key:$new_count"
+    }
+
+    echo "$instances_json" | jq -c '.[]?' 2>/dev/null | while read -r instance; do
+        name=$(echo "$instance" | jq -r '.name? // empty' 2>/dev/null)
+        ip=$(echo "$instance" | jq -r '.ipv4? // empty' 2>/dev/null)
+
+        if [[ -z "$name" ]] || [[ -z "$ip" ]]; then
+            continue
+        fi
+
+        current_count="$(get_count "$name")"
+        if [[ -n "$current_count" ]]; then
+            hostname="${name}-${current_count}"
+            new_count=$((current_count + 1))
+            set_count "$name" "$new_count"
+        else
+            hostname="$name"
+            set_count "$name" 2
+        fi
+
+        echo -e "Host $hostname\n\tHostName $ip\n\tUser root\n\tPort 22\n" >> "$sshnew"
+    done
+
+    if ssh -F "$sshnew" null -G > /dev/null 2>&1; then
+        mv "$sshnew" "$AXIOM_PATH/.sshconfig"
+    else
+        echo -e "${BRed}Error: Generated SSH config is invalid. Details:${Color_Off}"
+        ssh -F "$sshnew" null -G
+        cat "$sshnew"
+        rm -f "$sshnew"
+        return 1
+    fi
+}
+
+query_instances() {
+    bitlaunch_query_instances "$@"
+}

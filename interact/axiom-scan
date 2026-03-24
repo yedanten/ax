@@ -7,6 +7,12 @@ AXIOM_PATH="$HOME/.axiom"
 source "$AXIOM_PATH/interact/includes/vars.sh"
 source "$AXIOM_PATH/interact/includes/functions.sh"
 source "$AXIOM_PATH/interact/includes/system-notification.sh"
+
+provider="$(jq -r ".provider" "$AXIOM_PATH"/axiom.json)"
+if [ -f "$AXIOM_PATH/providers/$provider-functions.sh" ]; then
+    source "$AXIOM_PATH/providers/$provider-functions.sh"
+fi
+
 begin=$(date +%s)
 start="$(pwd)"
 BASEOS="$(uname)"
