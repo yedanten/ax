@@ -15,6 +15,7 @@ axiom.json
 images/json/axiom.json
 images/pkr.hcl/axiom.pkr.hcl
 images/axiom.json
+images/deploy/inventory.ini
 interact/includes/functions.sh
 selected.conf
 interact/includes/.auto_update
