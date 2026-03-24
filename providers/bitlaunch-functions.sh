@@ -396,3 +396,43 @@ generate_sshconfig() {
 query_instances() {
     bitlaunch_query_instances "$@"
 }
+
+delete_instance() {
+    bitlaunch_delete_instance "$@"
+}
+
+create_instance() {
+    bitlaunch_create_instance "$@"
+}
+
+instances() {
+    bitlaunch_instances "$@"
+}
+
+instance_ip() {
+    bitlaunch_instance_ip "$@"
+}
+
+get_image_id() {
+    bitlaunch_get_image_id "$@"
+}
+
+list_regions() {
+    bitlaunch_list_regions "$@"
+}
+
+poweron() {
+    bitlaunch_poweron "$@"
+}
+
+poweroff() {
+    bitlaunch_poweroff "$@"
+}
+
+reboot() {
+    bitlaunch_poweron "$@"
+}
+
+sizes_list() {
+    bitlaunch_list_sizes "$@"
+}
