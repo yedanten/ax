@@ -387,9 +387,9 @@ if [[ $BASEOS == "Linux" ]]; then
     fi
     if [[ $OS == "Arch" ]] || [[ $OS == "ManjaroLinux" ]]; then
         echo -e "${BGreen}Congrats, you run arch..."
-        echo -e "${BGreen}Installing git curl jq packer rsync...${Color_Off}"
+        echo -e "${BGreen}Installing git curl jq packer rsync ansible...${Color_Off}"
         # Stated dependencies in the Github-wiki
-        sudo pacman -Syu git curl jq packer rsync --noconfirm
+        sudo pacman -Syu git curl jq packer rsync ansible --noconfirm
         # Other dependencies
         sudo pacman -Syu go python-pip net-tools unzip libxslt bc --noconfirm
         echo -e "${BGreen}Installing Interlace...${Color_Off}"
@@ -407,8 +407,8 @@ if [[ $BASEOS == "Linux" ]]; then
         dpkg-reconfigure --frontend noninteractive tzdata
        fi
 
-       echo -e "${BGreen}Installing fail2ban ufw jq git python3-pip curl iputils-ping net-tools unzip xsltproc bc rsync sudo wget nano bsdmainutils openssh-server...${Color_Off}"
-       DEBIAN_FRONTEND=noninteractive sudo apt-get update && sudo apt-get install ufw git python3-pip curl iputils-ping net-tools unzip xsltproc bc rsync sudo wget nano bsdmainutils openssh-server fail2ban jq -y 
+       echo -e "${BGreen}Installing fail2ban ufw jq git python3-pip curl iputils-ping net-tools unzip xsltproc bc rsync sudo wget nano bsdmainutils openssh-server ansible...${Color_Off}"
+       DEBIAN_FRONTEND=noninteractive sudo apt-get update && sudo apt-get install ufw git python3-pip curl iputils-ping net-tools unzip xsltproc bc rsync sudo wget nano bsdmainutils openssh-server fail2ban jq ansible -y 
        echo -e "${BGreen}Installing packer...${Color_Off}"
        curl -fsSL https://apt.releases.hashicorp.com/gpg | sudo apt-key add -
        sudo apt-add-repository "deb [arch=amd64] https://apt.releases.hashicorp.com $(lsb_release -cs) main" -y
@@ -435,8 +435,8 @@ if [[ $BASEOS == "Linux" ]]; then
        cd /tmp/interlace && sudo python3 setup.py install
 
     elif [[ $OS == "Fedora" ]]; then
-       echo -e "${BGreen}Installing fail2ban mmv bc fzf git python3-pip curl net-tools unzip util-linux...${Color_Off}"
-       sudo dnf update && sudo dnf -y install mmv bc fzf git python3-pip curl net-tools unzip util-linux fail2ban
+       echo -e "${BGreen}Installing fail2ban mmv bc fzf git python3-pip curl net-tools unzip util-linux ansible...${Color_Off}"
+       sudo dnf update && sudo dnf -y install mmv bc fzf git python3-pip curl net-tools unzip util-linux fail2ban ansible
        echo -e "${BGreen}Installing jq...${Color_Off}"
        sudo wget -q -O /usr/bin/jq https://github.com/stedolan/jq/releases/download/jq-1.6/jq-linux64 && sudo chmod +x /usr/bin/jq
        echo -e "${BGreen}Installing packer...${Color_Off}"
@@ -495,6 +495,8 @@ if [[ $BASEOS == "Mac" ]]; then
     brew install coreutils
     echo -e "${BGreen}Installing gnu-sed...${Color_Off}"
     brew install gnu-sed
+    echo -e "${BGreen}Installing ansible...${Color_Off}"
+    brew install ansible
 
     if [[ "$unattended" == "true" ]]; then
         echo -e "${BGreen}Installing Python3...${Color_Off}"
@@ -567,7 +569,7 @@ fi
 
 if [ ! -d "$AXIOM_PATH" ]; then
     echo -e "${BGreen}Installing Ax scripts...${Color_Off}"
-    git clone https://github.com/attacksurge/ax "$AXIOM_PATH"
+    git clone https://github.com/yedanten/ax "$AXIOM_PATH"
     AXIOM_PATH="$HOME/.axiom"
     source "$AXIOM_PATH/interact/includes/vars.sh"
 else
@@ -685,12 +687,12 @@ exit 0
 fi
 
 if [ -z ${config+x} ]; then
-echo -e "${BWhite}Beginning first packer build...${Color_Off}"
-cd "$AXIOM_PATH"/ || exit
-"$AXIOM_PATH"/interact/axiom-build --run
-cd || exit
-echo -e "${BWhite}You may need to restart your shell: $SHELL${Color_Off}"
+    echo -e "${BWhite}Beginning packer build step...${Color_Off}"
+    cd "$AXIOM_PATH"/ || exit
+    "$AXIOM_PATH"/interact/axiom-build --run
+    cd || exit
+    echo -e "${BWhite}You may need to restart your shell: $SHELL${Color_Off}"
 else
-echo -e "${BWhite}You may need to restart your shell: $SHELL${Color_Off}"
-"$HOME"/.axiom/interact/axiom-account "$account"
+    echo -e "${BWhite}You may need to restart your shell: $SHELL${Color_Off}"
+    "$HOME"/.axiom/interact/axiom-account "$account"
 fi

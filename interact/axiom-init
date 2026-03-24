@@ -282,7 +282,15 @@ clean_up() {
 if [ $quiet == "true" ]
 then
     trap 'clean_up' SIGINT
-    create_instance "$name" "$image_id" "$size" "$region" "$user_data" "$disk" &
+    current_provider=$(jq -r .provider ~/.axiom/axiom.json)
+
+    if [ "$current_provider" == "bitlaunch" ]; then
+        echo -e "${BGreen}BitLaunch provider detected, starting on-the-fly provisioning...${Color_Off}"
+        source "$AXIOM_PATH/providers/bitlaunch-functions.sh"
+        bitlaunch_create_instance "$name" &
+    else
+        create_instance "$name" "$image_id" "$size" "$region" "$user_data" "$disk" &
+    fi
     PID="$!"
     waitabit "$PID"
     sleep 20
@@ -304,7 +312,15 @@ sleep 5
 region_transfer
 mkdir -p "$AXIOM_PATH/tmp/"
 trap 'clean_up' SIGINT
-create_instance "$name" "$image_id" "$size" "$region" "$user_data" "$disk" &
+current_provider=$(jq -r .provider ~/.axiom/axiom.json)
+
+if [ "$current_provider" == "bitlaunch" ]; then
+    echo -e "${BGreen}BitLaunch provider detected, starting on-the-fly provisioning...${Color_Off}"
+    source "$AXIOM_PATH/providers/bitlaunch-functions.sh"
+    bitlaunch_create_instance "$name" &
+else
+    create_instance "$name" "$image_id" "$size" "$region" "$user_data" "$disk" &
+fi
 
 PID="$!"
 "$NOTIFY_CMD" "Axiom Info" "Initializing '$name'..."

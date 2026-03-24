@@ -18,3 +18,5 @@ images/axiom.json
 interact/includes/functions.sh
 selected.conf
 interact/includes/.auto_update
+create-options.json
+token.txt

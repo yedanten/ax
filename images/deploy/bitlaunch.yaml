@@ -1,0 +1,164 @@
+---
+- name: 跨平台自动部署 AttackSurge Ax 框架 (纯 Root 模式 + Dev 分支)
+  hosts: cloud_vps
+  become: yes  # 全局保持 root 权限执行
+  vars:
+    local_axiom_path: "~/.axiom"
+    remote_home: "/root"                  # 强制指向 root 目录
+    repo_url: "https://github.com/attacksurge/ax.git"
+    repo_branch: "dev"                    # 指定使用 dev 分支
+    packer_version: "1.11.2"
+    golang_version: "1.22.1"
+    interlace_repo: "https://github.com/codingo/Interlace.git"
+
+  tasks:
+    # ==========================================
+    # 1. 针对不同操作系统的包管理器安装系统依赖
+    # ==========================================
+    - name: 安装 Debian/Ubuntu 系列依赖
+      apt:
+        name:
+          - sudo
+          - curl
+          - jq
+          - tzdata
+          - software-properties-common
+          - ufw
+          - git
+          - python3-pip
+          - python3-setuptools
+          - iputils-ping
+          - net-tools
+          - unzip
+          - xsltproc
+          - bc
+          - rsync
+          - wget
+          - nano
+          - bsdmainutils
+          - openssh-server
+          - fail2ban
+        state: present
+        update_cache: yes
+      when: ansible_os_family == "Debian"
+
+    - name: 安装 RedHat/Fedora 系列依赖
+      dnf:
+        name:
+          - curl
+          - jq
+          - git
+          - python3-pip
+          - python3-setuptools
+          - net-tools
+          - unzip
+          - bc
+          - rsync
+          - wget
+          - fail2ban
+          - util-linux
+          - mmv
+          - fzf
+        state: present
+        update_cache: yes
+      when: ansible_os_family == "RedHat"
+
+    - name: 安装 Arch Linux 系列依赖
+      pacman:
+        name:
+          - curl
+          - jq
+          - git
+          - python-pip
+          - python-setuptools
+          - net-tools
+          - unzip
+          - libxslt
+          - bc
+          - rsync
+          - wget
+        state: present
+        update_cache: yes
+      when: ansible_os_family == "Archlinux"
+
+    # ==========================================
+    # 2. 统一安装全局二进制核心组件 (Packer & Golang)
+    # ==========================================
+    - name: 下载并安装 Packer 二进制文件
+      unarchive:
+        src: "https://releases.hashicorp.com/packer/{{ packer_version }}/packer_{{ packer_version }}_linux_amd64.zip"
+        dest: "/usr/local/bin/"
+        remote_src: yes
+        mode: '0755'
+      args:
+        creates: /usr/local/bin/packer
+
+    - name: 下载并解压 Golang
+      unarchive:
+        src: "https://golang.org/dl/go{{ golang_version }}.linux-amd64.tar.gz"
+        dest: "/usr/local/"
+        remote_src: yes
+      args:
+        creates: /usr/local/go/bin/go
+
+    # ==========================================
+    # 3. 编译安装 Interlace 工具
+    # ==========================================
+    - name: 检出 Interlace 源码到临时目录
+      git:
+        repo: "{{ interlace_repo }}"
+        dest: "/tmp/interlace"
+        force: yes
+
+    - name: 编译并安装 Interlace
+      command: python3 setup.py install --record installed_files.txt
+      args:
+        chdir: "/tmp/interlace"
+        creates: "/tmp/interlace/installed_files.txt"
+      environment:
+        PIP_BREAK_SYSTEM_PACKAGES: "1"
+
+    # ==========================================
+    # 4. 部署 Ax 框架代码、配置与自定义工具 (纯 Root 权限)
+    # ==========================================
+    - name: 从 GitHub 克隆 Ax 框架代码 (dev 分支)
+      git:
+        repo: "{{ repo_url }}"
+        dest: "{{ remote_home }}/.axiom"
+        version: "{{ repo_branch }}"  # 强制拉取并追踪 dev 分支
+        clone: yes
+        update: yes
+        force: yes
+
+    - name: 复制本地 accounts 目录覆盖云端
+      copy:
+        src: "{{ local_axiom_path }}/accounts/"
+        dest: "{{ remote_home }}/.axiom/accounts/"
+        mode: '0600'
+        directory_mode: '0700'
+
+    - name: 复制本地 axiom.json 配置文件覆盖云端
+      copy:
+        src: "{{ local_axiom_path }}/axiom.json"
+        dest: "{{ remote_home }}/.axiom/axiom.json"
+        mode: '0644'
+
+    - name: 复制本地 blcli 工具到云端并赋予执行权限
+      copy:
+        src: "/usr/local/bin/blcli"
+        dest: "/bin/blcli"
+        mode: '0755'  # 0755 代表 rwxr-xr-x，确保 root 有读写执行权限，其他用户可读可执行
+
+    # ==========================================
+    # 5. 环境变量与 Shell 初始化
+    # ==========================================
+    - name: 配置 Bash 环境变量 (Golang & Ax Framework)
+      blockinfile:
+        path: "{{ remote_home }}/.bashrc"
+        marker: "# {mark} ANSIBLE MANAGED BLOCK - AX FRAMEWORK"
+        create: yes
+        block: |
+          export GOPATH=$HOME/go
+          export PATH=$GOPATH/bin:/usr/local/go/bin:$PATH:$HOME/.local/bin
+          export PATH="$PATH:$HOME/.axiom/interact"
+          [[ -f $HOME/.axiom/interact/includes/ax-completion.sh ]] && source $HOME/.axiom/interact/includes/ax-completion.sh

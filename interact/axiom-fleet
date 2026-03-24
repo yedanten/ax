@@ -19,6 +19,225 @@ AXIOM_PATH="$HOME/.axiom"
 source "$AXIOM_PATH/interact/includes/vars.sh"
 source "$AXIOM_PATH/interact/includes/functions.sh"
 source "$AXIOM_PATH/interact/includes/system-notification.sh"
+
+provider="$(jq -r ".provider" "$AXIOM_PATH"/axiom.json)"
+if [ -f "$AXIOM_PATH/providers/$provider-functions.sh" ]; then
+    source "$AXIOM_PATH/providers/$provider-functions.sh"
+fi
+
+###########################################################################################################
+# Help Menu
+#
+function usage() {
+    echo -e "${BWhite}Usage:${Color_Off} axiom-fleet [OPTIONS] [<fleet prefix>]"
+    echo
+    echo -e "${BWhite}Description:${Color_Off}"
+    echo -e "  Spin up fleets of Axiom instances across one or more regions."
+    echo -e "  Specify a custom fleet prefix, or let Axiom generate one randomly."
+    echo
+    echo -e "${BWhite}Options:${Color_Off}"
+    echo -e "  <fleet prefix>           Optional name for fleet prefix (e.g. ctbb, jerry)"
+    echo -e "  -i, --instances <int>    Number of instances to create (required)"
+    echo -e "  -r, --regions <list>     Comma-separated list of regions (optional)"
+    echo -e "  --image <name>           Specify image to use (default from axiom.json)"
+    echo -e "  --debug                  Enable debug mode (very verbose)"
+    echo -e "  --help                   Show this help menu"
+    echo
+    echo -e "${BWhite}Examples:${Color_Off}"
+    echo -e "  ${BGreen}axiom-fleet ctbb${Color_Off}                                  # Spin up 3 instances: ctbb01, ctbb02, ctbb03"
+    echo -e "  ${BGreen}axiom-fleet -i 10${Color_Off}                                 # Spin up 10 instances with random prefix"
+    echo -e "  ${BGreen}axiom-fleet jerry -i 25 --regions dal13,lon06,fra05${Color_Off} # Create 25 'jerry' instances using region round-robin"
+    echo
+}
+
+
+if [[ "$provider" == "bitlaunch" ]]; then
+    pass=()
+    i=0
+    args=""
+    amount=""
+    for arg in "$@"
+    do
+        i=$((i+1))
+        if [[  ! " ${pass[@]} " =~ " ${i} " ]]; then
+            set=false
+            if [[ "$arg" == "-i" ]] || [[ "$arg" == "--instances" ]]; then
+                n=$((i+1))
+                amount=$(echo ${!n})
+                set=true
+                pass+=($i)
+                pass+=($n)
+            fi
+            if [[ "$arg" == "--help" ]] || [[ "$arg" == "-h" ]] ; then
+                usage
+                exit
+            fi
+            if  [[ "$set" != "true" ]]; then
+                space=" "
+                if [[ $arg =~ $space ]]; then
+                  args="$args \"$arg\""
+                else
+                  args="$args $arg"
+                fi
+            fi
+        fi
+    done
+    gen_name=$(echo "$args" | xargs)
+
+    if [ -z "$amount" ]; then
+        echo "Error: -i, --instances <count> is a required argument."
+        exit 1
+    fi
+
+    if [[ ! "$amount" =~ ^[0-9]+$ ]]; then
+        echo "Error: instance count must be a number."
+        exit 1
+    fi
+
+    if [ "$amount" -gt 5 ]; then
+        echo "Warning: Bitlaunch provider supports a maximum of 5 instances. Setting instance count to 5."
+        amount=5
+    fi
+
+    if [ -z "$gen_name" ]; then
+        gen_name="${names[$RANDOM % ${#names[@]} ]}"
+    fi
+
+    echo "Initializing fleet '$gen_name' with $amount instance(s) on Bitlaunch..."
+    echo -e "${BWhite}INITIALIZING IN 5 SECONDS, CTRL+C to quit... ${Color_Off}"
+    sleep 5
+
+    TOKEN=$(jq -r '.token' "$AXIOM_PATH/accounts/bitlaunch.json")
+    if [ -z "$TOKEN" ] || [ "$TOKEN" == "null" ]; then
+        echo "Error: Bitlaunch token not found in $AXIOM_PATH/accounts/bitlaunch.json"
+        echo "Please run 'axiom-account-setup' to configure your Bitlaunch account."
+        exit 1
+    fi
+
+    REGION=$(jq -r '.region' "$AXIOM_PATH/axiom.json")
+    IMAGE=$(jq -r '.default_image' "$AXIOM_PATH/axiom.json")
+    SIZE=$(jq -r '.default_size' "$AXIOM_PATH/axiom.json")
+    SSHKEY_ID=$(jq -r '.sshkey_id' "$AXIOM_PATH/axiom.json")
+    if [ -z "$SSHKEY_ID" ] || [ "$SSHKEY_ID" == "null" ]; then
+        echo "Error: sshkey_id not found in axiom.json."
+        echo "Please run 'axiom-build' to sync your SSH key with Bitlaunch."
+        exit 1
+    fi
+
+    instance_ids=()
+    total=$(blcli server list --token "$TOKEN" | jq -r --arg name "$gen_name" '.[] | select(.name | startswith($name)) | .name' | sed -n 's/.*[^0-9]\([0-9]*\)$/\1/p' | sort -nr | head -n1)
+    total="${total#0}"
+    start=$((total + 1))
+    end=$((total + amount))
+
+    for i in $(seq $start $end); do
+        num=$(printf "%02d" $i)
+        instance_name="${gen_name}${num}"
+        echo "Creating instance: $instance_name"
+
+        create_output=$(blcli server create --host bitlaunch --name "$instance_name" --region "$REGION" --image "$IMAGE" --size "$SIZE" --sshkey "$SSHKEY_ID" --token "$TOKEN")
+
+        if [[ "$create_output" == "Error"* ]]; then
+            echo "Error creating instance $instance_name: $create_output"
+            echo "Aborting fleet creation."
+            exit 1
+        fi
+
+        instance_id=$(echo "$create_output" | jq -r '.id')
+        if [ -z "$instance_id" ] || [ "$instance_id" == "null" ]; then
+            echo "Failed to get instance ID for $instance_name from output: $create_output"
+            exit 1
+        fi
+        instance_ids+=("$instance_id")
+        echo "Instance $instance_name created with ID: $instance_id"
+        sleep 1
+    done
+
+    echo "All create requests sent. Waiting for instances to become available... (this may take up to 2 minutes)"
+    sleep 120
+
+    instance_ips=()
+    all_ips_found=false
+    echo "Polling for instance IPs..."
+    for _ in $(seq 1 30); do
+        list_output=$(blcli server list --token "$TOKEN")
+        if [[ "$list_output" == "Error"* ]]; then
+            echo "Error listing servers: $list_output"
+            echo "Will retry in 10 seconds..."
+            sleep 10
+            continue
+        fi
+
+        temp_ips=()
+        all_ok=true
+        for id in "${instance_ids[@]}"; do
+            server_json=$(echo "$list_output" | jq -r --arg id "$id" '.[] | select(.id == $id)')
+            if [ -z "$server_json" ]; then
+                all_ok=false
+                break
+            fi
+            ip=$(echo "$server_json" | jq -r '.ipv4')
+            status=$(echo "$server_json" | jq -r '.status')
+            if [ -z "$ip" ] || [ "$ip" == "" ] || [ "$status" != "ok" ]; then
+                all_ok=false
+                break
+            fi
+            temp_ips+=("$ip")
+        done
+
+        if [ "$all_ok" = true ] && [ "${#temp_ips[@]}" -eq "$amount" ]; then
+            instance_ips=("${temp_ips[@]}")
+            all_ips_found=true
+            break
+        fi
+        found_count=${#temp_ips[@]}
+        echo -ne ">> Found IPs for $found_count/$amount instances. Waiting 10 seconds...\033[0K\r"
+        sleep 10
+    done
+    echo ""
+
+    if [ "$all_ips_found" = false ]; then
+        echo "Error: Could not retrieve IPs for all instances after waiting."
+        echo "You may need to destroy them manually: axiom-rm $gen_name* -f"
+        exit 1
+    fi
+
+    echo "All instance IPs acquired."
+
+    inventory_file="$AXIOM_PATH/images/deploy/inventory.ini"
+    playbook_file="$AXIOM_PATH/images/deploy/deploy-ax.yml"
+    
+    if [ ! -f "$playbook_file" ]; then
+        echo "Error: Ansible playbook not found at $playbook_file"
+        exit 1
+    fi
+
+    echo "[cloud_vps]" > "$inventory_file"
+    for ip in "${instance_ips[@]}"; do
+        echo "$ip ansible_user=root" >> "$inventory_file"
+    done
+
+    echo "Generated Ansible inventory file:"
+    cat "$inventory_file"
+
+    echo "Running Ansible playbook to provision instances..."
+    
+    ANSIBLE_HOST_KEY_CHECKING=False ansible-playbook -i "$inventory_file" "$playbook_file"
+
+    if [ $? -eq 0 ]; then
+        echo -e "${BGreen}Fleet '$gen_name' provisioned successfully!${Color_Off}"
+        "$AXIOM_PATH"/interact/axiom-select "$gen_name*"
+        echo -e "${BGreen}To delete your fleet, just run '${BGreen}axiom-rm \"$gen_name*\" -f${BGreen}'${Color_Off}"
+    else
+        echo "Error during Ansible provisioning."
+        echo "You may need to destroy the instances manually: axiom-rm $gen_name* -f"
+        exit 1
+    fi
+
+    exit 0
+fi
+
+
 BASEOS="$(uname)"
 case $BASEOS in
 'Darwin')
@@ -41,6 +260,9 @@ region_array=()
 gen_name=""
 provider="$(jq -r ".provider" "$AXIOM_PATH"/axiom.json)"
 image="$(jq -r '.imageid' "$AXIOM_PATH"/axiom.json)"
+if [[ "$provider" == "bitlaunch" && ( "$image" == "null" || -z "$image") ]]; then
+    image=$(jq -r '.default_image' "$AXIOM_PATH"/axiom.json)
+fi
 region="$(jq -r '.region' "$AXIOM_PATH"/axiom.json)"
 sshkey="$(jq -r '.sshkey' "$AXIOM_PATH"/axiom.json)"
 image_id=""
@@ -74,31 +296,6 @@ if [[ "$provider" == "do" ]]; then
  fi
 echo -n -e ${BGreen}
 fi
-}
-
-###########################################################################################################
-# Help Menu
-#
-function usage() {
-    echo -e "${BWhite}Usage:${Color_Off} axiom-fleet [OPTIONS] [<fleet prefix>]"
-    echo
-    echo -e "${BWhite}Description:${Color_Off}"
-    echo -e "  Spin up fleets of Axiom instances across one or more regions."
-    echo -e "  Specify a custom fleet prefix, or let Axiom generate one randomly."
-    echo
-    echo -e "${BWhite}Options:${Color_Off}"
-    echo -e "  <fleet prefix>           Optional name for fleet prefix (e.g. ctbb, jerry)"
-    echo -e "  -i, --instances <int>    Number of instances to create (required)"
-    echo -e "  -r, --regions <list>     Comma-separated list of regions (optional)"
-    echo -e "  --image <name>           Specify image to use (default from axiom.json)"
-    echo -e "  --debug                  Enable debug mode (very verbose)"
-    echo -e "  --help                   Show this help menu"
-    echo
-    echo -e "${BWhite}Examples:${Color_Off}"
-    echo -e "  ${BGreen}axiom-fleet ctbb${Color_Off}                                  # Spin up 3 instances: ctbb01, ctbb02, ctbb03"
-    echo -e "  ${BGreen}axiom-fleet -i 10${Color_Off}                                 # Spin up 10 instances with random prefix"
-    echo -e "  ${BGreen}axiom-fleet jerry -i 25 --regions dal13,lon06,fra05${Color_Off} # Create 25 'jerry' instances using region round-robin"
-    echo
 }
 
 ###########################################################################################################

@@ -664,9 +664,9 @@ if [[ "$provider" == "exoscale" ]]; then
     packer plugins install github.com/exoscale/exoscale
 
     # Validate token and setup configuration
-    api_key="$(jq -r '.api_key' "$AXIOM_PATH/accounts/$1.json")"
-    api_secret="$(jq -r '.api_secret' "$AXIOM_PATH/accounts/$1.json")"
-    region="$(jq -r '.region' "$AXIOM_PATH/accounts/$1.json")"
+    api_key="$(jq -r '.api_key' "$AXIOM_PATH/accounts/$1".json")"
+    api_secret="$(jq -r '.api_secret' "$AXIOM_PATH/accounts/$1".json")"
+    region="$(jq -r '.region' "$AXIOM_PATH/accounts/$1".json")"
     echo -e "${BGreen}Configuring exo CLI with credentials from axiom.json...${Color_Off}"
 
     if [[ $BASEOS == "Mac" ]]; then
@@ -692,6 +692,36 @@ EOF
         bootstrap
     fi
 fi # end of exoscale
+
+# Install bitlaunch-cli if not already installed, check token is valid or kick off bootstrap
+#
+if [[ "$provider" == "bitlaunch" ]]; then
+    installed_version=$(blcli version 2>/dev/null | awk '{print $3}')
+    if [[ "$(printf '%s\n' "$installed_version" "$BlcliVersion" | sort -V | head -n 1)" != "$BlcliVersion" ]]; then
+        echo -e "${Yellow}blcli is either not installed or version is lower than the recommended version in ~/.axiom/interact/includes/vars.sh${Color_Off}"
+        echo "Installing/updating blcli to version $BlcliVersion..."
+
+        # Install or update bitlaunch-cli and handle externally-managed-environment
+        output=$(pip3 install bitlaunch-cli --upgrade 2>&1)
+        if echo "$output" | grep -q "externally-managed-environment"; then
+            echo "Detected an externally managed environment. Retrying with --break-system-packages..."
+            pip3 install bitlaunch-cli --upgrade --break-system-packages
+        else
+            echo "blcli updated successfully or no externally managed environment detected."
+        fi
+    fi
+
+    # Validate token and setup configuration
+    token="$(jq -r '.bitlaunch_key' "$AXIOM_PATH/accounts/$1".json")"
+    
+    # Check if credentials are valid by trying to get account info
+    if blcli account show --token "$token" &> /dev/null; then
+        echo -e "${BGreen}Bitlaunch account authenticated successfully.${Color_Off}"
+    else
+        echo -e "${Red}Bitlaunch account authentication failed. Please check your credentials.${Color_Off}"
+        bootstrap
+    fi
+fi # end of bitlaunch
 
 echo -e "${Green}Selected $1 successfully${Color_Off}"
 else

@@ -1,0 +1,8 @@
+{
+  "provider": "bitlaunch",
+  "token": "YOUR_BITLAUNCH_API_TOKEN_PASTE_HERE"，
+  "default_region": "ams3",
+  "default_size": "nibble-1024",
+  "default_image": "0",
+  "sshkey": "axiom_rsa"
+}
