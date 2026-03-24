@@ -291,14 +291,9 @@ if [ "$provider" == "bitlaunch" ]; then
         echo "Existing SSH key found on Bitlaunch account. ID: $SSHKEY_ID"
     fi
 
-    echo "Saving SSH Key ID to configuration..."
+    echo "Saving SSH Key ID to 'sshkey' field in configuration..."
     account_path=$(readlink -f "$AXIOM_PATH/axiom.json") 
-    jq '.sshkey_id = "'$SSHKEY_ID'"' < "$account_path" > "$AXIOM_PATH/tmp.json" && mv "$AXIOM_PATH/tmp.json" "$account_path"
-    
-    bitlaunch_account_file="$AXIOM_PATH/accounts/$(basename $account_path)"
-    if [ -f "$bitlaunch_account_file" ]; then
-         jq '.sshkey_id = "'$SSHKEY_ID'"' < "$bitlaunch_account_file" > "$AXIOM_PATH/tmp.json" && mv "$AXIOM_PATH/tmp.json" "$bitlaunch_account_file"
-    fi
+    jq '.sshkey = "'$SSHKEY_ID'"' < "$account_path" > "$AXIOM_PATH/tmp.json" && mv "$AXIOM_PATH/tmp.json" "$account_path"
 
     jq '.provisioner="'$provisioner'"' <"$account_path">"$AXIOM_PATH"/tmp.json ; mv "$AXIOM_PATH"/tmp.json "$account_path"
     echo "Bitlaunch setup complete."

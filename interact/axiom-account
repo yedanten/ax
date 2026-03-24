@@ -664,9 +664,9 @@ if [[ "$provider" == "exoscale" ]]; then
     packer plugins install github.com/exoscale/exoscale
 
     # Validate token and setup configuration
-    api_key="$(jq -r '.api_key' "$AXIOM_PATH/accounts/$1".json")"
-    api_secret="$(jq -r '.api_secret' "$AXIOM_PATH/accounts/$1".json")"
-    region="$(jq -r '.region' "$AXIOM_PATH/accounts/$1".json")"
+    api_key="$(jq -r '.api_key' "$AXIOM_PATH/accounts/$1.json")"
+    api_secret="$(jq -r '.api_secret' "$AXIOM_PATH/accounts/$1.json")"
+    region="$(jq -r '.region' "$AXIOM_PATH/accounts/$1.json")"
     echo -e "${BGreen}Configuring exo CLI with credentials from axiom.json...${Color_Off}"
 
     if [[ $BASEOS == "Mac" ]]; then
@@ -712,10 +712,10 @@ if [[ "$provider" == "bitlaunch" ]]; then
     fi
 
     # Validate token and setup configuration
-    token="$(jq -r '.bitlaunch_key' "$AXIOM_PATH/accounts/$1".json")"
-    
+    token=$(jq -r '.token' "$AXIOM_PATH/accounts/"$1".json")
+
     # Check if credentials are valid by trying to get account info
-    if blcli account show --token "$token" &> /dev/null; then
+    if blcli account show --token ${token} &> /dev/null; then
         echo -e "${BGreen}Bitlaunch account authenticated successfully.${Color_Off}"
     else
         echo -e "${Red}Bitlaunch account authentication failed. Please check your credentials.${Color_Off}"

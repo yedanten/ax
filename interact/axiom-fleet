@@ -114,12 +114,12 @@ if [[ "$provider" == "bitlaunch" ]]; then
         exit 1
     fi
 
-    REGION=$(jq -r '.region' "$AXIOM_PATH/axiom.json")
+    REGION=$(jq -r '.default_region' "$AXIOM_PATH/axiom.json")
     IMAGE=$(jq -r '.default_image' "$AXIOM_PATH/axiom.json")
     SIZE=$(jq -r '.default_size' "$AXIOM_PATH/axiom.json")
-    SSHKEY_ID=$(jq -r '.sshkey_id' "$AXIOM_PATH/axiom.json")
+    SSHKEY_ID=$(jq -r '.sshkey' "$AXIOM_PATH/axiom.json")
     if [ -z "$SSHKEY_ID" ] || [ "$SSHKEY_ID" == "null" ]; then
-        echo "Error: sshkey_id not found in axiom.json."
+        echo "Error: sshkey not found in axiom.json."
         echo "Please run 'axiom-build' to sync your SSH key with Bitlaunch."
         exit 1
     fi
@@ -205,7 +205,7 @@ if [[ "$provider" == "bitlaunch" ]]; then
     echo "All instance IPs acquired."
 
     inventory_file="$AXIOM_PATH/images/deploy/inventory.ini"
-    playbook_file="$AXIOM_PATH/images/deploy/deploy-ax.yml"
+    playbook_file="$AXIOM_PATH/images/deploy/bitlaunch.yaml"
     
     if [ ! -f "$playbook_file" ]; then
         echo "Error: Ansible playbook not found at $playbook_file"
@@ -214,7 +214,7 @@ if [[ "$provider" == "bitlaunch" ]]; then
 
     echo "[cloud_vps]" > "$inventory_file"
     for ip in "${instance_ips[@]}"; do
-        echo "$ip ansible_user=root" >> "$inventory_file"
+        echo "$ip ansible_user=root ansible_ssh_private_key_file=~/.ssh/axiom_rsa" >> "$inventory_file"
     done
 
     echo "Generated Ansible inventory file:"
