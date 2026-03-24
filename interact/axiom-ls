@@ -3,6 +3,12 @@
 AXIOM_PATH="$HOME/.axiom"
 source "$AXIOM_PATH/interact/includes/vars.sh"
 source "$AXIOM_PATH/interact/includes/functions.sh"
+
+provider="$(jq -r ".provider" "$AXIOM_PATH"/axiom.json)"
+if [ -f "$AXIOM_PATH/providers/$provider-functions.sh" ]; then
+    source "$AXIOM_PATH/providers/$provider-functions.sh"
+fi
+
 current=$(readlink -f "$AXIOM_PATH/axiom.json" | rev | cut -d / -f 1 | rev | cut -d . -f 1)
 echo -e "${BWhite}Listing instances in account: $(echo $current)${Color_Off}"
 

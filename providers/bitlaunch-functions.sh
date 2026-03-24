@@ -12,7 +12,7 @@ _bl_ensure_cli_installed() {
         echo -e "${BYellow}blcli is not installed. Installing now...${Color_Off}"
     else
         # Check if blcli is the correct version
-        installed_version=$(blcli version 2>/dev/null | awk '{print $3}')
+        installed_version=$(blcli version 2>/dev/null | awk '{print $2}')
         if [[ "$(printf '%s\n' "$installed_version" "$BlcliVersion" | sort -V | head -n 1)" == "$BlcliVersion" ]]; then
             return 0 # Correct version is installed
         fi
@@ -31,7 +31,7 @@ _bl_ensure_cli_installed() {
 
 bitlaunch_list_instances() {
     _bl_ensure_cli_installed
-    local TOKEN=$(_bl_get_config_value "bitlaunch_key")
+    local TOKEN=$(_bl_get_config_value "token")
     local OUTPUT=$(blcli server list --token "$TOKEN")
     if [[ "$OUTPUT" == "Error"* ]]; then
         echo -e "${BRed}Failed to list instances: $OUTPUT${Color_Off}"
@@ -49,7 +49,7 @@ bitlaunch_get_ip() {
 
 bitlaunch_delete_instance() {
     local instance_name=$1
-    local TOKEN=$(_bl_get_config_value "bitlaunch_key")
+    local TOKEN=$(_bl_get_config_value "token")
     echo "Getting instance ID for '$instance_name'..."
     local instances=$(bitlaunch_list_instances)
     if [[ $? -ne 0 ]]; then return 1; fi
@@ -77,7 +77,7 @@ bitlaunch_create_instance() {
     local region=$(_bl_get_config_value "default_region")
     local size=$(_bl_get_config_value "default_size")
     local ssh_key_name=$(_bl_get_config_value "sshkey")
-    local TOKEN=$(_bl_get_config_value "bitlaunch_key")
+    local TOKEN=$(_bl_get_config_value "token")
 
     if [ -z "$image" ] || [ -z "$region" ] || [ -z "$size" ] || [ -z "$ssh_key_name" ]; then
         echo -e "${BRed}Error: Missing required configuration (image, region, size, or sshkey). Please run 'axiom-account-setup' first.${Color_Off}"
@@ -233,7 +233,7 @@ bitlaunch_select_region() {
 
 bitlaunch_list_regions() {
     _bl_ensure_cli_installed
-    local TOKEN=$(_bl_get_config_value "bitlaunch_key")
+    local TOKEN=$(_bl_get_config_value "token")
     local OUTPUT=$(blcli create-options bitlaunch --token "$TOKEN")
     if [[ "$OUTPUT" == "Error"* ]]; then
         echo -e "${BRed}Failed to list regions: $OUTPUT${Color_Off}"
@@ -244,7 +244,7 @@ bitlaunch_list_regions() {
 
 bitlaunch_list_images() {
     _bl_ensure_cli_installed
-    local TOKEN=$(_bl_get_config_value "bitlaunch_key")
+    local TOKEN=$(_bl_get_config_value "token")
     local OUTPUT=$(blcli create-options bitlaunch --token "$TOKEN")
     if [[ "$OUTPUT" == "Error"* ]]; then
         echo -e "${BRed}Failed to list images: $OUTPUT${Color_Off}"
@@ -255,7 +255,7 @@ bitlaunch_list_images() {
 
 bitlaunch_list_sizes() {
     _bl_ensure_cli_installed
-    local TOKEN=$(_bl_get_config_value "bitlaunch_key")
+    local TOKEN=$(_bl_get_config_value "token")
     local OUTPUT=$(blcli create-options bitlaunch --token "$TOKEN")
      if [[ "$OUTPUT" == "Error"* ]]; then
         echo -e "${BRed}Failed to list sizes: $OUTPUT${Color_Off}"
@@ -266,7 +266,7 @@ bitlaunch_list_sizes() {
 
 bitlaunch_poweron() {
     local instance_name=$1
-    local TOKEN=$(_bl_get_config_value "bitlaunch_key")
+    local TOKEN=$(_bl_get_config_value "token")
     echo "Getting instance ID for '$instance_name'..."
     local instances=$(bitlaunch_list_instances)
     if [[ $? -ne 0 ]]; then return 1; fi
@@ -292,4 +292,26 @@ bitlaunch_poweroff() {
 
 bitlaunch_snapshot() {
     echo "Snapshots are not supported by BitLaunch."
+}
+
+instance_pretty() {
+    data=$(bitlaunch_list_instances)
+    if [ $? -ne 0 ]; then
+        echo "Failed to get instance data."
+        return 1
+    fi
+
+    if ! echo "$data" | jq . > /dev/null 2>&1; then
+        echo "Got invalid JSON from bitlaunch_list_instances"
+        echo "$data"
+        return 1
+    fi
+
+    header="Instance,PublicIP,Status,ID"
+    
+    # This jq filter assumes a json array with objects having these keys
+    fields=".[]? | [.name, .ipv4, .status, .id] | @csv"
+    
+    data=$(echo "$data" | jq -r "$fields")
+    (echo "$header" && echo "$data") | sed 's/"//g' | column -t -s,
 }
